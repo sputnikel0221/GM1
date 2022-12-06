@@ -6,6 +6,7 @@ public class PlayerMove : MonoBehaviour
 {
     public float maxSpeed;
     public float decSpeed;
+    public float jumpPower;
 
     //Inspector의 객체를 가져와서 쓰기 위한 변수
     Rigidbody2D rigid;
@@ -50,6 +51,12 @@ public class PlayerMove : MonoBehaviour
             animator.SetBool("isWalking", false);
         }else animator.SetBool("isWalking", true);
         
+
+        //점프 - vertical이 아니라 jump라는 예약어가 따로 있다..
+        if(Input.GetButtonDown("Jump") && !animator.GetBool("isJumping")){
+            rigid.AddForce(Vector2.up * jumpPower , ForceMode2D.Impulse);
+            animator.SetBool("isJumping", true);
+        }
     }
 
 
@@ -68,6 +75,25 @@ public class PlayerMove : MonoBehaviour
         }
         else if(rigid.velocity.x < -maxSpeed){
             rigid.velocity = new Vector2(-maxSpeed, rigid.velocity.y);
+        }
+
+
+        //플레이어의 발이 어딘가에 붙어있는지 찾는법, oncollider의 심화버전, RAY를 쓴다
+        //Landing Platform, 디버그문은 에디터창에서만 보인다. 현재 위치 아래를 쏘는 것/
+        //Ray를 그리는데, 현재위치,아래로,초록색, 이건 그냥 디버그용 허울이고
+        //실제 Raycast는 물리를 이용한다, raycasthit2d는 아래 명령어로 현재위치,아래로,1칸을 탐지, "특정레이어"만 감지
+        //그래서 rayHit이 충돌한 물체가 존재하면 해당 이름을 표시하는 디버그 (layer를 지정하지 않으면 본인이 탐지됨)
+        //0이 아니라 0.5인 이유는 플레이어가 1의 collider인데 현재위치에서 1만큼 나가기에 0.5여야 땅에 완전히 붙은것
+        //y의 속도값이 0이하 즉 내려오고 있는 경우에만 파악 : 땅에서 점프 하는 찰나 레이캐스트가 인식하는 경우가 존재했다.
+        Debug.DrawRay(rigid.position, Vector3.down, new Color(0,1,0));
+
+        if(rigid.velocity.y<0){
+            RaycastHit2D rayHit = Physics2D.Raycast(rigid.position, Vector3.down,1, LayerMask.GetMask("Platform"));
+            if(rayHit.collider!=null){
+                if(rayHit.distance < 0.5f){
+                    animator.SetBool("isJumping", false);
+            }
+            }
         }
     }
 }
