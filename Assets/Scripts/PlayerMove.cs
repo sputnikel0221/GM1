@@ -4,6 +4,8 @@ using UnityEngine;
 
 public class PlayerMove : MonoBehaviour
 {
+    //game Manager는 public으로 생성.. 그리고 inspector에 사용자가 직접 매니져를 끌어다 넣어서 사용..
+    public GameManager gameManager;
     public float maxSpeed;
     public float decSpeed;
     public float jumpPower;
@@ -14,12 +16,24 @@ public class PlayerMove : MonoBehaviour
     
     Animator animator;
 
+    //사운드를 담을 공간
+    public AudioClip aJump;
+    public AudioClip aAttack;
+    public AudioClip aDamaged;
+    public AudioClip aItem;
+    public AudioClip aDie;
+    public AudioClip aFinish;
+    AudioSource audioSource;
+    //오디오소스 객체가 해당 오디오클립을 받아 실행하는 원리인 듯
+
+
     //start보다 먼저 호출되며, 게임시작전 변수나 상태의 초기화에 주로 사용
     //rigid라는 변수에 해당 스크립터가 적용된 컴포넌트를 가져온다.
     void Awake() {
         rigid = GetComponent<Rigidbody2D>();
         spriteRenderer = GetComponent<SpriteRenderer>();
         animator = GetComponent<Animator>();
+        audioSource = GetComponent<AudioSource>();
     }
 
     //단발적인 키 입력은 Update를 쓰는게 좋다. 
@@ -33,12 +47,12 @@ public class PlayerMove : MonoBehaviour
         }
 
         //방향전환, GetAxisRaw : https://docs.unity3d.com/ScriptReference/Input.GetAxisRaw.html
-        //왼,오에 키가 눌려있으면, flip을 하는데, Horizontal축에 대한 입력값이 -1, 즉 왼쪽이면,
+        //왼,오에 키가 눌려있으면(getbuttonDown인데, getbutton으로 바꿈), flip을 하는데, Horizontal축에 대한 입력값이 -1, 즉 왼쪽이면,
         //우항은 true가 되고, flipX가 true기에, X가 flip된다.
         //근데 왜 오른쪽으로 갈 때, flip이 알아서 원래대로 우측을 보게 복귀되는지?
         //버튼이 눌리고 있는가에 대한 if문을 계속 들어오므로, ==-1인지에 대한 논리식도 계속 검사하게되고
         //false로 뜨기에 우측을 보는 깔끔한 코드
-         if(Input.GetButtonDown("Horizontal")){
+         if(Input.GetButton("Horizontal")){
             spriteRenderer.flipX = Input.GetAxisRaw("Horizontal") == -1;
          }
 
@@ -56,6 +70,7 @@ public class PlayerMove : MonoBehaviour
         if(Input.GetButtonDown("Jump") && !animator.GetBool("isJumping")){
             rigid.AddForce(Vector2.up * jumpPower , ForceMode2D.Impulse);
             animator.SetBool("isJumping", true);
+            PlaySound("JUMP");
         }
     }
 
@@ -95,5 +110,113 @@ public class PlayerMove : MonoBehaviour
             }
             }
         }
+    }
+
+    //현재 스크립트가 적용된 물체가 충돌을 한다면, 해당 객체를 other로 받고 진행
+    //transform.position.y>other.transform.position.y 이게 중요한듯 싶다
+    //둘 다 inspector의 transform.position항목의 y값을 사용.
+    //본인은 굳이 앞에 객체이름을 붙일 필요가 없으나, 부딪힌것은 표시해야됨
+
+    //위에서 내려오는 중에 enemy객체를 부딪히는 경우 공격으로 인식해야됨
+    void OnCollisionEnter2D(Collision2D other) {
+        if(other.gameObject.tag=="Enemy"){
+            if(rigid.velocity.y <0 && transform.position.y>other.transform.position.y){
+                OnAttack(other.gameObject);
+            }
+            else{
+            OnDamaged();
+        }
+        } 
+        
+    }
+
+    //사용자 정의함수, 적을 공격
+    //https://mingyu0403.tistory.com/22
+    //https://docs.unity3d.com/kr/530/ScriptReference/Collision2D.html
+    //왜 gameObject가 아닌 Transform으로 enemy를 받을까 > 둘 다 잘 작동함
+
+    //EnemyMove 스크립트의 객체를 만들고, 부딪힌 enemy객체와 동기화
+    //해당 객체의 on damaged함수를 실행
+    void OnAttack(GameObject enemy){
+        rigid.AddForce(Vector2.up*3,ForceMode2D.Impulse);
+        gameManager.stagePoint+=100;
+        EnemyMove enemyMove = enemy.GetComponent<EnemyMove>();
+        enemyMove.OnDamaged();
+        PlaySound("ATTACK");
+    }
+    // void OnAttack(Transform enemy){
+    //     rigid.AddForce(Vector2.up*3,ForceMode2D.Impulse);
+    //     EnemyMove enemyMove = enemy.GetComponent<EnemyMove>();
+    //     enemyMove.OnDamaged();
+    // }
+
+    //사용자 정의함수, 피해를 입으면 실행
+    //gameObject는 스크립트가 적용된 객체 : 즉 맞은 객체의 레이어를 바꿈
+    void OnDamaged(){
+        gameObject.layer = 11;
+        gameManager.HealthDown();
+        //무적효과를 위한 반투명화
+        spriteRenderer.color = new Color(1,1,1,0.4f);
+
+        //순간적인 위로의 반작용
+        rigid.AddForce(new Vector2(0,2)*7, ForceMode2D.Impulse);
+
+        //animation - trigger
+        animator.SetTrigger("getDamaged");
+        PlaySound("DAMAGED");
+        Invoke("offDamaged", 3);
+    }
+
+    //무적을 해제
+    void offDamaged(){
+        gameObject.layer = 10;
+        spriteRenderer.color = new Color(1,1,1,1);
+    }
+
+    //동전과 finish깃발에 적용하기 위한 함수
+    //이건 트리거, isTrigger부분을 체크해야 쓸 수 있다.
+    //참고 : https://keykat7.blogspot.com/2020/12/unity3d-ontrigger-oncollision.html
+    //is trigger은 내부로 통과할 수 있는듯
+    void OnTriggerEnter2D(Collider2D other) {
+        if(other.gameObject.tag=="Item"){
+            gameManager.stagePoint+=100;
+            other.gameObject.SetActive(false);
+            PlaySound("ITEM");
+        }
+        else if (other.gameObject.tag=="Finish"){
+            gameManager.NextStage();
+            PlaySound("FINISH");
+        }
+
+    }
+
+    public void Ondie(){
+        Time.timeScale = 0;
+        Debug.Log("죽었습니다!");
+        //플레이어의 죽음
+    }
+
+    void PlaySound(string action){
+        switch(action){
+            case "JUMP":
+                audioSource.clip = aJump;
+                break;
+            case "ATTACK":
+                audioSource.clip = aAttack;
+                break;
+            case "DAMAGED":
+                audioSource.clip = aDamaged;
+                break;
+            case "ITEM":
+                audioSource.clip = aItem;
+                break;
+            case "DIE":
+                audioSource.clip = aDie;
+                break;
+            case "FINISH":
+                audioSource.clip = aFinish;
+                break;   
+        }
+        audioSource.Play();
     }
 }
